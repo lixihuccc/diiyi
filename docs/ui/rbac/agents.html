@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Agent 管理 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="agents" data-title="Agent 管理" data-group="平台" data-requires="agent:list">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Agent 管理</h1>
+            <p class="page-desc">创建、发布与启停 Agent。列表只返回你有权读取的资源；写操作还会校验归属人与数据范围。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" type="button" data-perm="agent:create" data-create>新建 Agent</button>
+          </div>
+        </div>
+
+        <div class="table-tools">
+          <div class="tool-set">
+            <input class="field search" id="q" type="search" placeholder="搜索名称、归属人或 ID" aria-label="搜索 Agent">
+            <select class="field select" id="status-filter" aria-label="按状态筛选">
+              <option value="">全部状态</option>
+              <option value="running">运行中</option>
+              <option value="stopped">已停止</option>
+              <option value="draft">草稿</option>
+              <option value="error">异常</option>
+            </select>
+            <select class="field select" id="visibility-filter" aria-label="按可见范围筛选">
+              <option value="">全部可见范围</option>
+              <option value="public">公开</option>
+              <option value="private">私有</option>
+            </select>
+          </div>
+          <div class="small muted" id="result-meta"></div>
+        </div>
+
+        <p class="scroll-hint">左右滑动查看完整表格。</p>
+        <div class="ledger-wrap">
+          <table class="ledger">
+            <caption id="caption">已按当前身份的数据范围过滤，分页 total 与过滤结果一致。</caption>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>归属人</th>
+                <th>可见范围</th>
+                <th>版本</th>
+                <th class="num">成功率</th>
+                <th>最近更新</th>
+                <th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <span id="total-label"></span>
+          <div class="pages" id="pages">
+            <button class="page-btn" type="button" disabled>上一页</button>
+            <button class="page-btn" type="button" aria-current="true">1</button>
+            <button class="page-btn" type="button" disabled>下一页</button>
+          </div>
+        </div>
+
+        <div class="notice" id="boundary-note"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var me = CG.me;
+  var canUpdate = CG.can('agent:update');
+  var canDelete = CG.can('agent:delete');
+  var visible = CG.agents.filter(CG.canRead);
+
+  document.getElementById('caption').textContent =
+    '可读 ' + visible.length + ' / ' + CG.agents.length + ' 条；其余 ' + (CG.agents.length - visible.length) + ' 条为他人私有资源，不会出现在列表或分页 total 中。';
+
+  var noteParts = [];
+  if (!CG.can('agent:create')) {
+    noteParts.push('「新建 Agent」按钮未渲染：当前角色没有 <span class="code">agent:create</span>（C-02）。');
+  }
+  if (!me.isSuperuser && me.dataScope === 'self') {
+    var others = visible.filter(function (a) { return !CG.isMine(a); }).length;
+    noteParts.push('表中 ' + others + ' 条为他人创建。公开资源可查看，但编辑与删除会被拒绝（<span class="code">40302</span>）。');
+  }
+  noteParts.push('公开是「可见」而不是「可编辑」；写操作 = 功能权限 + 归属人校验。');
+  document.getElementById('boundary-note').innerHTML = noteParts.join(' ');
+
+  function actionButton(label, kind, enabled, reason, handler) {
+    return '<button class="icon-btn ' + (kind === 'danger' ? 'danger ' : '') + '" type="button"' +
+      (enabled ? '' : ' disabled title="' + reason + '"') +
+      ' data-action="' + handler + '">' + label + '</button>';
+  }
+
+  function render() {
+    var term = document.getElementById('q').value.trim().toLowerCase();
+    var status = document.getElementById('status-filter').value;
+    var vis = document.getElementById('visibility-filter').value;
+
+    var list = visible.filter(function (a) {
+      var hit = !term || a.name.toLowerCase().indexOf(term) !== -1 ||
+        a.owner.toLowerCase().indexOf(term) !== -1 || a.id.indexOf(term) !== -1;
+      return hit && (!status || a.status === status) && (!vis || a.visibility === vis);
+    });
+
+    document.getElementById('result-meta').textContent =
+      '显示 ' + list.length + ' 条，共 ' + visible.length + ' 条可访问' +
+      (visible.length < CG.agents.length ? '（另有 ' + (CG.agents.length - visible.length) + ' 条不可见）' : '');
+
+    document.getElementById('rows').innerHTML = list.map(function (a) {
+      var mine = CG.isMine(a);
+      var writeOk = CG.canWrite(a);
+      var editReason = !canUpdate ? '当前角色没有 agent:update' : '仅创建者可修改（40302）';
+      var deleteReason = !canDelete ? '当前角色没有 agent:delete' : '仅创建者可修改（40302）';
+      return '<tr' + (mine ? ' class="is-self"' : '') + '>' +
+        '<td><a class="link" href="' + CG.hrefWithRole('agent-detail.html', 'agent=' + encodeURIComponent(a.id)) + '">' + a.name + '</a>' +
+          '<div class="small muted mono">' + a.id + '</div></td>' +
+        '<td>' + a.type + '</td>' +
+        '<td>' + CG.statusTag(a.status) + '</td>' +
+        '<td>' + a.owner + (mine ? ' <span class="tag tag-grant">你</span>' : '') + '</td>' +
+        '<td>' + CG.visibilityTag(a.visibility) + '</td>' +
+        '<td class="mono">' + a.version + '</td>' +
+        '<td class="num">' + a.success + '</td>' +
+        '<td class="small muted nowrap">' + a.updated + '</td>' +
+        '<td><div class="row-actions">' +
+          actionButton('编辑', '', canUpdate && writeOk, editReason, 'edit') +
+          actionButton('删除', 'danger', canDelete && writeOk, deleteReason, 'delete') +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('total-label').textContent = '共 ' + list.length + ' 条，第 1 / 1 页';
+
+    document.getElementById('rows').querySelectorAll('[data-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-action');
+        CG.toast(action === 'edit' ? '原型演示：打开编辑表单（服务端仍会校验 agent:update 与数据归属）' : '原型演示：删除需二次确认，并校验 agent:delete 与数据归属');
+      });
+    });
+  }
+
+  ['q', 'status-filter', 'visibility-filter'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', render);
+    el.addEventListener('change', render);
+  });
+
+  var createBtn = document.querySelector('[data-create]');
+  if (createBtn) createBtn.addEventListener('click', function () {
+    CG.toast('原型演示：新建 Agent 默认可见范围为「私有」，由创建人决定是否公开');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

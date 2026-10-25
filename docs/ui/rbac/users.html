@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>用户管理 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="users" data-title="用户管理" data-group="系统管理" data-requires="user:list">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">用户管理</h1>
+            <p class="page-desc">管理账号、角色与启用状态。超级管理员只能由初始化脚本设置，任何接口都不提供修改入口。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" type="button" data-perm="user:create" data-invite>新建用户</button>
+          </div>
+        </div>
+
+        <div class="table-tools">
+          <div class="tool-set">
+            <input class="field search" id="q" type="search" placeholder="搜索姓名或邮箱" aria-label="搜索用户">
+            <select class="field select" id="role-filter" aria-label="按角色筛选">
+              <option value="">全部角色</option>
+              <option value="管理员">管理员</option>
+              <option value="运营人员">运营人员</option>
+              <option value="只读访客">只读访客</option>
+            </select>
+            <select class="field select" id="state-filter" aria-label="按状态筛选">
+              <option value="">全部状态</option>
+              <option value="active">已启用</option>
+              <option value="disabled">已禁用</option>
+            </select>
+          </div>
+          <div class="small muted" id="count"></div>
+        </div>
+
+        <div class="ledger-wrap">
+          <table class="ledger">
+            <caption>角色为多选；用户的有效权限是所有角色的并集，数据范围取最宽值。</caption>
+            <thead>
+              <tr>
+                <th>用户</th>
+                <th>角色</th>
+                <th>数据范围</th>
+                <th>状态</th>
+                <th>超级管理员</th>
+                <th>最近登录</th>
+                <th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <span id="total"></span>
+          <div class="pages">
+            <button class="page-btn" type="button" disabled>上一页</button>
+            <button class="page-btn" type="button" aria-current="true">1</button>
+            <button class="page-btn" type="button" disabled>下一页</button>
+          </div>
+        </div>
+
+        <section class="section" aria-labelledby="protect-title">
+          <div class="section-head">
+            <h2 id="protect-title">保护规则</h2>
+            <span class="meta">失败时返回 403 / 409 业务码</span>
+          </div>
+          <div class="ledger-wrap">
+            <table class="ledger">
+              <thead><tr><th>规则</th><th>说明</th><th>业务码</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">最后一个超级管理员</td><td>不可删除、不可禁用，也不可移除管理员角色。系统必须始终保留一个可用的超级管理员。</td><td><span class="code">40300</span></td></tr>
+                <tr><td class="strong">非超级管理员修改超级管理员</td><td>不得修改其角色、状态或删除账号。</td><td><span class="code">40300</span></td></tr>
+                <tr><td class="strong">修改自己的角色</td><td>防止自提权；超级管理员除外。</td><td><span class="code">40300</span></td></tr>
+                <tr><td class="strong">分配超出自身权限的角色</td><td>目标角色的权限集合必须是操作者权限集合的子集。</td><td><span class="code">40303</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal" id="role-modal" hidden role="dialog" aria-modal="true" aria-labelledby="role-modal-title">
+  <div class="modal-veil" data-close-modal></div>
+  <div class="modal-card">
+    <button class="modal-close" type="button" aria-label="关闭" data-close-modal>×</button>
+    <div class="modal-head">
+      <h2 id="role-modal-title">分配角色</h2>
+      <p id="role-modal-sub">用户的有效权限为所选角色的并集。</p>
+    </div>
+    <div class="modal-body">
+      <div class="role-check"><input type="checkbox" id="rc-admin" checked><label for="rc-admin"><span class="rc-name">管理员</span><span class="rc-meta">全部权限，数据范围 all，系统内置</span></label></div>
+      <div class="role-check"><input type="checkbox" id="rc-operator"><label for="rc-operator"><span class="rc-name">运营人员</span><span class="rc-meta">业务模块全权，数据范围 self</span></label></div>
+      <div class="role-check"><input type="checkbox" id="rc-viewer"><label for="rc-viewer"><span class="rc-name">只读访客</span><span class="rc-meta">仅 list / read，数据范围 self</span></label></div>
+      <div class="notice warn">你只能分配权限集合不超过你自身权限的角色。越权分配会整体拒绝，并返回 <span class="code">40303</span>，指出具体的权限码。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-modal>取消</button>
+      <button class="btn btn-primary" type="button" id="role-save">保存角色</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var canAssign = CG.can('user:assign_role');
+  var canDelete = CG.can('user:delete');
+  var me = CG.me;
+
+  function render() {
+    var term = document.getElementById('q').value.trim().toLowerCase();
+    var role = document.getElementById('role-filter').value;
+    var state = document.getElementById('state-filter').value;
+
+    var list = CG.users.filter(function (u) {
+      var hit = !term || u.name.toLowerCase().indexOf(term) !== -1 || u.email.toLowerCase().indexOf(term) !== -1;
+      var roleHit = !role || u.roles.indexOf(role) !== -1;
+      var stateHit = !state || (state === 'active' ? u.active : !u.active);
+      return hit && roleHit && stateHit;
+    });
+
+    document.getElementById('count').textContent = '显示 ' + list.length + ' 个账号';
+    document.getElementById('total').textContent = '共 ' + list.length + ' 个账号，第 1 / 1 页';
+
+    document.getElementById('rows').innerHTML = list.map(function (u) {
+      var self = (me.key === 'admin' && u.id === 'u-1') || (me.key === 'operator' && u.id === 'u-2') || (me.key === 'viewer' && u.id === 'u-3');
+      var isLastSuper = u.superuser && CG.users.filter(function (x) { return x.superuser && x.active; }).length === 1;
+      var delReason = !canDelete ? '当前角色没有 user:delete' : isLastSuper ? '系统必须保留至少一个可用的超级管理员（D-05）' : '';
+      var assignReason = !canAssign ? '当前角色没有 user:assign_role' : (self && !me.isSuperuser) ? '不能修改自己的角色（D-02）' : '';
+      return '<tr' + (self ? ' class="is-self"' : '') + '>' +
+        '<td><span class="strong">' + u.name + '</span>' + (self ? ' <span class="tag tag-grant">你</span>' : '') +
+          '<div class="small muted">' + u.email + '</div></td>' +
+        '<td>' + u.roles.map(CG.roleTag).join(' ') + '</td>' +
+        '<td>' + (u.superuser ? '<span class="tag tag-grant">全部数据</span>' : '仅本人数据') + '</td>' +
+        '<td>' + (u.active ? '<span class="dot-state state-running">已启用</span>' : '<span class="dot-state state-stopped">已禁用</span>') + '</td>' +
+        '<td>' + (u.superuser ? '<span class="tag tag-warn">是</span>' : '<span class="muted small">否</span>') + '</td>' +
+        '<td class="small muted mono">' + u.last + '</td>' +
+        '<td><div class="row-actions">' +
+          '<button class="icon-btn" type="button"' + (assignReason ? ' disabled title="' + assignReason + '"' : '') + ' data-assign="' + u.id + '">分配角色</button>' +
+          '<button class="icon-btn danger" type="button"' + (delReason ? ' disabled title="' + delReason + '"' : '') + ' data-del="' + u.id + '">删除</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    document.querySelectorAll('[data-assign]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var u = CG.users.filter(function (x) { return x.id === btn.getAttribute('data-assign'); })[0];
+        document.getElementById('role-modal-sub').textContent = '为「' + u.name + '」选择角色。有效权限为所选角色的并集。';
+        document.getElementById('rc-admin').checked = u.roles.indexOf('管理员') !== -1;
+        document.getElementById('rc-operator').checked = u.roles.indexOf('运营人员') !== -1;
+        document.getElementById('rc-viewer').checked = u.roles.indexOf('只读访客') !== -1;
+        CG.openModal('role-modal');
+      });
+    });
+
+    document.querySelectorAll('[data-del]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var u = CG.users.filter(function (x) { return x.id === btn.getAttribute('data-del'); })[0];
+        CG.toast('原型演示：删除「' + u.name + '」需要二次确认，并转移其业务资源归属');
+      });
+    });
+  }
+
+  ['q', 'role-filter', 'state-filter'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', render);
+    el.addEventListener('change', render);
+  });
+
+  document.querySelectorAll('[data-close-modal]').forEach(function (el) {
+    el.addEventListener('click', function () { CG.closeModal('role-modal'); });
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') CG.closeModal('role-modal');
+  });
+  document.getElementById('role-save').addEventListener('click', function () {
+    CG.closeModal('role-modal');
+    CG.toast('原型演示：角色已保存；被调整的用户会在下一次请求时按新权限生效');
+  });
+  var invite = document.querySelector('[data-invite]');
+  if (invite) invite.addEventListener('click', function () {
+    CG.toast('原型演示：新建用户不提供 is_superuser 字段，避免通过接口提权');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>审计日志 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="audit" data-title="审计日志" data-group="系统管理" data-requires="system:audit_read">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">审计日志</h1>
+            <p class="page-desc">谁在什么时候给谁授了什么权。记录包含操作人、操作时间、事件类型、目标对象、变更前后与来源 IP。</p>
+          </div>
+          <div class="page-actions">
+            <span class="small muted">保留 180 天</span>
+          </div>
+        </div>
+
+        <div class="strip" id="audit-summary"></div>
+
+        <div class="table-tools" style="margin-top:22px">
+          <div class="tool-set">
+            <input class="field search" id="q" type="search" placeholder="搜索操作人、目标或权限码" aria-label="搜索审计记录">
+            <select class="field select" id="action-filter" aria-label="按事件筛选">
+              <option value="">全部事件</option>
+              <option value="授予角色权限">授予角色权限</option>
+              <option value="分配用户角色">分配用户角色</option>
+              <option value="修改数据范围">修改数据范围</option>
+              <option value="创建权限">创建权限</option>
+              <option value="越权授权被拒">越权授权被拒</option>
+            </select>
+          </div>
+          <div class="small muted" id="count"></div>
+        </div>
+
+        <div class="ledger-wrap">
+          <table class="ledger">
+            <caption>授权类事件不可删除、不可编辑。无法追溯到操作人的授权视为缺陷。</caption>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>操作人</th>
+                <th>事件</th>
+                <th>目标</th>
+                <th>变更前</th>
+                <th>变更后</th>
+                <th>来源 IP</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <span id="total"></span>
+          <div class="pages">
+            <button class="page-btn" type="button" disabled>上一页</button>
+            <button class="page-btn" type="button" aria-current="true">1</button>
+            <button class="page-btn" type="button" disabled>下一页</button>
+          </div>
+        </div>
+
+        <div class="notice warn">
+          审计表后端尚未实现，V2 将其列为 P1。若本期资源不足，至少保证应用日志中可检索到上述事件；本页展示的是目标形态。
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var events = CG.audit;
+
+  document.getElementById('audit-summary').innerHTML = [
+    ['近 7 天事件', 14, '次'],
+    ['越权被拒', events.filter(function (e) { return e.action === '越权授权被拒'; }).length, '次，40303'],
+    ['涉及角色', 3, '个'],
+    ['操作人', 2, '位']
+  ].map(function (s) {
+    return '<div class="cell"><div class="k">' + s[0] + '</div><div class="v">' + s[1] + ' <small>' + s[2] + '</small></div></div>';
+  }).join('');
+
+  function render() {
+    var term = document.getElementById('q').value.trim().toLowerCase();
+    var action = document.getElementById('action-filter').value;
+    var list = events.filter(function (e) {
+      var hit = !term || [e.actor, e.target, e.before, e.after, e.ip].join(' ').toLowerCase().indexOf(term) !== -1;
+      return hit && (!action || e.action === action);
+    });
+
+    document.getElementById('count').textContent = '显示 ' + list.length + ' 条记录';
+    document.getElementById('total').textContent = '共 ' + list.length + ' 条，第 1 / 1 页';
+
+    document.getElementById('rows').innerHTML = list.map(function (e) {
+      var denied = e.action === '越权授权被拒';
+      var after = e.after.indexOf(':') !== -1 ? '<span class="code' + (denied ? ' deny' : '') + '">' + e.after + '</span>' : e.after;
+      var before = e.before.indexOf(':') !== -1 ? '<span class="code plain">' + e.before + '</span>' : e.before;
+      return '<tr>' +
+        '<td class="mono small nowrap">' + e.time + '</td>' +
+        '<td>' + e.actor + '</td>' +
+        '<td>' + (denied ? '<span class="tag tag-deny">' + e.action + '</span>' : e.action) + '</td>' +
+        '<td>' + (e.target.indexOf(':') !== -1 ? '<span class="code">' + e.target + '</span>' : e.target) + '</td>' +
+        '<td class="muted">' + before + '</td>' +
+        '<td>' + after + '</td>' +
+        '<td class="mono small muted">' + e.ip + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  document.getElementById('q').addEventListener('input', render);
+  document.getElementById('action-filter').addEventListener('change', render);
+  render();
+})();
+</script>
+</body>
+</html>

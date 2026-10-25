@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Agent 详情 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="agents" data-title="Agent 详情" data-group="平台" data-requires="agent:read">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page" id="page-root"></div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var agentId = params.get('agent') || 'agt-1042';
+  var agent = CG.agents.filter(function (a) { return a.id === agentId; })[0] || CG.agents[0];
+  var root = document.getElementById('page-root');
+
+  if (!CG.canRead(agent)) {
+    root.innerHTML = '' +
+      '<div class="denied">' +
+        '<div>' +
+          '<div class="deny-code">40301，无权访问该数据</div>' +
+          '<h1>这条 Agent 不在你的可见范围内</h1>' +
+          '<p>资源为他人私有，且你的数据范围是「仅本人数据」。服务端不会返回其内容，直接输入 ID 也不能绕过。若你需要访问，请联系归属人将可见范围改为公开，或由管理员调整你的角色数据范围。</p>' +
+          '<div class="actions">' +
+            '<a class="btn btn-primary" href="' + CG.hrefWithRole('agents.html') + '">返回 Agent 列表</a>' +
+            '<button class="btn" type="button" data-switch>切换预览身份</button>' +
+          '</div>' +
+        '</div>' +
+        '<dl>' +
+          '<div class="d-row"><dt>请求资源</dt><dd>' + agent.id + '</dd></div>' +
+          '<div class="d-row"><dt>归属人</dt><dd>' + agent.owner + '</dd></div>' +
+          '<div class="d-row"><dt>可见范围</dt><dd>private</dd></div>' +
+          '<div class="d-row"><dt>你的数据范围</dt><dd>' + (CG.me.dataScope === 'all' ? 'all' : 'self') + '</dd></div>' +
+        '</dl>' +
+      '</div>';
+    var sw = root.querySelector('[data-switch]');
+    if (sw) sw.addEventListener('click', function () { CG.switchRole('admin'); });
+    return;
+  }
+
+  var mine = CG.isMine(agent);
+  var writeOk = CG.canWrite(agent);
+  var canUpdate = CG.can('agent:update');
+  var canDelete = CG.can('agent:delete');
+  var canPublish = CG.can('agent:publish');
+  var canStart = CG.can('agent:start');
+  var canStop = CG.can('agent:stop');
+
+  function reason(code, granted) {
+    if (!granted) return '当前角色没有 ' + code;
+    return '仅创建者可修改（40302）';
+  }
+
+  function action(label, cls, enabled, why, kind) {
+    return '<button class="btn ' + cls + '" type="button"' + (enabled ? '' : ' disabled title="' + why + '"') +
+      ' data-demo="' + kind + '">' + label + '</button>';
+  }
+
+  var editOk = canUpdate && writeOk;
+  var deleteOk = canDelete && writeOk;
+  var publishOk = canPublish && writeOk;
+  var startOk = (agent.status === 'running' ? canStop : canStart) && writeOk;
+
+  var facts = [
+    ['Agent ID', '<span class="mono">' + agent.id + '</span>'],
+    ['类型', agent.type],
+    ['基础模型', agent.model],
+    ['归属人', agent.owner + (mine ? ' <span class="tag tag-grant">你</span>' : '')],
+    ['可见范围', CG.visibilityTag(agent.visibility)],
+    ['最近更新', '<span class="mono small">' + agent.updated + '</span>']
+  ];
+
+  var versions = [
+    { v: agent.version, at: '2026-10-24 16:20', by: agent.owner, note: '调整意图识别阈值，补充退款场景', current: true },
+    { v: 'v2.2', at: '2026-10-12 10:36', by: agent.owner, note: '接入工单查询工具', current: false },
+    { v: 'v2.1', at: '2026-09-28 14:02', by: agent.owner, note: '首次发布', current: false }
+  ];
+
+  var refs = [
+    ['知识库', '客服知识库 2026', '周正', 'private'],
+    ['Prompt', '客服话术主模板', '周正', 'public'],
+    ['工具', '工单查询', '周正', 'public']
+  ];
+
+  root.innerHTML = '' +
+    '<div class="detail-head">' +
+      '<div class="detail-title">' +
+        '<h1>' + agent.name + '</h1>' +
+        CG.statusTag(agent.status) +
+        CG.visibilityTag(agent.visibility) +
+        (mine ? '<span class="tag tag-grant">你创建的</span>' : '') +
+      '</div>' +
+      '<div class="detail-sub">' +
+        '<span class="mono">' + agent.id + '</span>' +
+        '<span>归属 ' + agent.owner + '</span>' +
+        '<span>更新于 ' + agent.updated + '</span>' +
+        '<span>版本 ' + agent.version + '</span>' +
+      '</div>' +
+      '<div class="detail-actions">' +
+        action('编辑', '', editOk, reason('agent:update', canUpdate), '编辑') +
+        action(agent.status === 'running' ? '停止' : '启动', '', startOk, reason(agent.status === 'running' ? 'agent:stop' : 'agent:start', agent.status === 'running' ? canStop : canStart), agent.status === 'running' ? '停止' : '启动') +
+        action('发布', '', publishOk, reason('agent:publish', canPublish), '发布') +
+        action('删除', 'btn-danger', deleteOk, reason('agent:delete', canDelete), '删除') +
+      '</div>' +
+    '</div>' +
+
+    '<div class="with-notes">' +
+      '<div>' +
+        '<section class="section" style="margin-top:0">' +
+          '<div class="section-head"><h2>基本信息</h2><span class="meta">子资源继承父资源的可见性</span></div>' +
+          '<dl class="facts">' + facts.map(function (f) {
+            return '<div class="fact"><dt>' + f[0] + '</dt><dd>' + f[1] + '</dd></div>';
+          }).join('') + '</dl>' +
+          '<div class="notice">' + (agent.visibility === 'public'
+            ? '<strong>公开</strong>表示所有拥有 <span class="code">agent:read</span> 的用户都可以查看，但修改、发布、删除仍只对归属人与数据范围为「全部数据」的角色开放。'
+            : '<strong>私有</strong>资源仅归属人、数据范围为「全部数据」的角色与超级管理员可以读取和修改。') + '</div>' +
+        '</section>' +
+
+        '<section class="section">' +
+          '<div class="section-head"><h2>版本记录</h2><span class="meta">' + versions.length + ' 个版本，按时间倒序</span></div>' +
+          '<div class="version-row" style="border-top:0;padding-top:0"><span class="small muted">版本</span><span class="small muted">发布人</span><span class="small muted">变更说明</span><span class="small muted vtime">时间</span></div>' +
+          versions.map(function (v) {
+            return '<div class="version-row">' +
+              '<span class="ver">' + v.v + (v.current ? ' <span class="tag tag-grant">当前</span>' : '') + '</span>' +
+              '<span class="small">' + v.by + '</span>' +
+              '<span class="note">' + v.note + '</span>' +
+              '<span class="small muted mono vtime">' + v.at + '</span>' +
+            '</div>';
+          }).join('') +
+        '</section>' +
+
+        '<section class="section">' +
+          '<div class="section-head"><h2>引用资源</h2><span class="meta">保存时校验可读性，运行时不回溯调用者</span></div>' +
+          '<div class="ledger-wrap"><table class="ledger">' +
+            '<thead><tr><th>类型</th><th>名称</th><th>归属人</th><th>可见范围</th><th>当前身份可读</th></tr></thead>' +
+            '<tbody>' + refs.map(function (r, i) {
+              var ok = CG.me.isSuperuser || r[3] === 'public' || r[2] === CG.me.name;
+              return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + CG.visibilityTag(r[3]) + '</td><td>' +
+                (ok ? '<span class="tag tag-grant">可读</span>' : '<span class="tag tag-deny">无权访问</span>') + '</td></tr>';
+            }).join('') + '</tbody>' +
+          '</table></div>' +
+          '<div class="notice warn">' + (CG.me.isSuperuser
+            ? '超级管理员可读全部引用资源，不会出现无权访问的引用。'
+            : '存在不可读的引用时，编辑并保存会失败，并指出具体资源（B-08）。已保存的引用不会因下游改为私有而失效；运行时按 Agent 配置执行。') + '</div>' +
+        '</section>' +
+      '</div>' +
+
+      '<aside class="notes" aria-labelledby="notes-title">' +
+        '<h2 id="notes-title">权限注记</h2>' +
+        '<dl>' +
+          '<div class="n-row"><dt>归属人</dt><dd>' + agent.owner + (mine ? '（你）' : '') + '</dd></div>' +
+          '<div class="n-row"><dt>可见范围</dt><dd>' + CG.visibilityTag(agent.visibility) + '</dd></div>' +
+          '<div class="n-row"><dt>你的数据范围</dt><dd>' + (CG.me.dataScope === 'all' ? '全部数据' : '仅本人数据') + '</dd></div>' +
+          '<div class="n-row"><dt>你的角色</dt><dd>' + CG.me.roles.map(function (r) { return r.name; }).join('、') + '</dd></div>' +
+        '</dl>' +
+        '<div class="note-line allow"><span class="mark">✓</span><span><b>可查看</b><span class="why">' +
+          (CG.me.isSuperuser ? '超级管理员跳过数据权限校验。' : mine ? '你是归属人。' : agent.visibility === 'public' ? '资源为公开，且你拥有 agent:read。' : '已授予读取权限。') +
+        '</span></span></div>' +
+        '<div class="note-line ' + (editOk ? 'allow' : 'deny') + '"><span class="mark">' + (editOk ? '✓' : '×') + '</span><span><b>可编辑</b><span class="why">' +
+          (editOk ? '拥有 agent:update，且你是归属人。' : !canUpdate ? '缺少 agent:update。' : '他人创建的资源，数据范围「仅本人」不可写（40302）。') +
+        '</span></span></div>' +
+        '<div class="note-line ' + (deleteOk ? 'allow' : 'deny') + '"><span class="mark">' + (deleteOk ? '✓' : '×') + '</span><span><b>可删除</b><span class="why">' +
+          (deleteOk ? '拥有 agent:delete，且你是归属人。' : !canDelete ? '缺少 agent:delete。' : '只有创建者可以删除（40302）。') +
+        '</span></span></div>' +
+        '<div class="note-line ' + (publishOk ? 'allow' : 'deny') + '"><span class="mark">' + (publishOk ? '✓' : '×') + '</span><span><b>可发布</b><span class="why">' +
+          (publishOk ? '拥有 agent:publish，且你是归属人。' : !canPublish ? '缺少 agent:publish。' : '只有创建者可以发布（40302）。') +
+        '</span></span></div>' +
+        '<p class="note-foot">可见范围变更与写操作使用同一判定：仅归属人、数据范围 all 与超级管理员可以修改。</p>' +
+        (writeOk ? '<button class="btn" style="width:100%;margin-top:12px" type="button" data-visibility>修改可见范围</button>' : '') +
+      '</aside>' +
+    '</div>';
+
+  document.querySelectorAll('[data-demo]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      CG.toast('原型演示：' + btn.getAttribute('data-demo') + '操作会在服务端再次校验功能权限与数据归属');
+    });
+  });
+  var vis = root.querySelector('[data-visibility]');
+  if (vis) vis.addEventListener('click', function () {
+    CG.toast('原型演示：可见范围默认「私有」；改为公开仅赋予他人读取权，不赋予编辑权');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>登录 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到登录表单</a>
+
+<div class="login">
+  <aside class="login-aside">
+    <div class="login-brand">辰光 Agent<small>CHENGUANG / ACCESS CONSOLE</small></div>
+
+    <div class="login-thesis">
+      <p>每一次访问，都有明确的边界。</p>
+      <p class="lead">所有接口默认要求登录，并按功能权限与数据权限两层校验。界面上看到的每一个入口，都对应一个可追溯的判定。</p>
+    </div>
+
+    <div class="login-rules">
+      <h2>访问规则</h2>
+      <div class="lr"><span>功能权限</span><span>能不能做这件事：例如 agent:create</span></div>
+      <div class="lr"><span>数据权限</span><span>能对哪些记录做这件事：归属人 + 可见范围</span></div>
+      <div class="lr"><span>失败码</span><span>40100 未登录；40300 无操作权限；40301 无权访问数据</span></div>
+      <div class="lr"><span>生效时延</span><span>主动失效立即生效；缓存兜底最长 5 分钟</span></div>
+    </div>
+  </aside>
+
+  <main class="login-main" id="main">
+    <div class="login-form">
+      <h1>登录</h1>
+      <p class="form-sub">使用平台账号继续。登录后将调用 <span class="mono">/users/me</span> 获取角色与权限。</p>
+
+      <form id="login-form" novalidate>
+        <div class="form-field">
+          <label for="username">用户名</label>
+          <input id="username" name="username" type="text" value="zhou.zheng" autocomplete="username">
+        </div>
+        <div class="form-field">
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password" value="demo-password" autocomplete="current-password">
+        </div>
+        <div class="form-field captcha-row">
+          <div>
+            <label for="captcha">验证码</label>
+            <input id="captcha" name="captcha" type="text" placeholder="输入右侧字符" autocomplete="off">
+          </div>
+          <div class="captcha" aria-label="验证码 6K3F" title="原型演示，点击不刷新">6K3F</div>
+        </div>
+
+        <button class="btn btn-primary login-submit" type="submit" id="submit">登录</button>
+        <p class="form-foot">本页为静态原型，<b>不需要真实凭证</b>。提交后按所选身份进入工作台。</p>
+      </form>
+
+      <div class="demo-accounts">
+        <div style="margin-bottom:6px">演示身份（点击填入）</div>
+        <button class="da" type="button" data-demo="admin" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--rule)">
+          <span>周正 / 超级管理员</span><span>zhou.zheng</span>
+        </button>
+        <button class="da" type="button" data-demo="operator" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--rule)">
+          <span>林晓 / 运营人员</span><span>lin.xiao</span>
+        </button>
+        <button class="da" type="button" data-demo="viewer" style="width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--rule)">
+          <span>陈默 / 只读访客</span><span>chen.mo</span>
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var role = 'admin';
+  var usernames = { admin: 'zhou.zheng', operator: 'lin.xiao', viewer: 'chen.mo' };
+
+  document.querySelectorAll('[data-demo]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      role = btn.getAttribute('data-demo');
+      document.getElementById('username').value = usernames[role];
+      document.getElementById('password').value = 'demo-password';
+      document.getElementById('captcha').focus();
+      CG.toast('已填入「' + btn.querySelector('span').textContent + '」的演示账号');
+    });
+  });
+
+  document.getElementById('login-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var user = document.getElementById('username').value.trim();
+    var pass = document.getElementById('password').value;
+    var code = document.getElementById('captcha').value.trim();
+    if (!user || !pass) {
+      CG.toast('请填写用户名与密码');
+      return;
+    }
+    if (code && code.toUpperCase() !== '6K3F') {
+      CG.toast('验证码不正确，请重新输入');
+      return;
+    }
+    window.location.href = 'dashboard.html?role=' + role;
+  });
+})();
+</script>
+</body>
+</html>

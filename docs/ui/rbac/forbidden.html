@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>没有访问权限 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="forbidden" data-title="没有访问权限">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="denied">
+          <div>
+            <div class="deny-code" id="deny-code">40300 / 缺少操作权限</div>
+            <h1>没有访问该页面的权限</h1>
+            <p id="deny-copy"></p>
+            <div class="actions">
+              <a class="btn btn-primary" href="dashboard.html" id="to-dashboard">返回工作台</a>
+              <button class="btn" type="button" id="back">返回上一页</button>
+              <button class="btn btn-quiet" type="button" id="switch-identity">切换预览身份</button>
+            </div>
+          </div>
+          <dl>
+            <div class="d-row"><dt>请求路径</dt><dd id="d-from">roles.html</dd></div>
+            <div class="d-row"><dt>所需权限码</dt><dd id="d-perm">role:list</dd></div>
+            <div class="d-row"><dt>当前身份</dt><dd id="d-who"></dd></div>
+            <div class="d-row"><dt>数据范围</dt><dd id="d-scope"></dd></div>
+            <div class="d-row"><dt>业务码</dt><dd>40300</dd></div>
+          </dl>
+        </div>
+
+        <section class="section">
+          <div class="section-head">
+            <h2>为什么是 403 而不是 404</h2>
+            <span class="meta">内部平台优先保证可排查性</span>
+          </div>
+          <div class="grid-2">
+            <p class="small muted" style="line-height:1.8">
+              前端路由守卫与后端功能权限使用同一套规则：菜单不可见，直接输入 URL 也不可达。前端只负责呈现，最终判定始终由服务端完成（C-03 / C-07）。
+            </p>
+            <p class="small muted" style="line-height:1.8">
+              不可见的数据返回 <span class="code">40301</span> 而不是伪装成 404，让用户明确知道「是权限问题」而不是「数据丢了」。若未来对外开放 API，再统一切换为 404 防枚举。
+            </p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h2>业务码与前端行为</h2>
+            <span class="meta">HTTP 状态码仍为 200，由 code 区分结果</span>
+          </div>
+          <div class="ledger-wrap">
+            <table class="ledger">
+              <thead><tr><th>code</th><th>含义</th><th>前端行为</th></tr></thead>
+              <tbody>
+                <tr><td><span class="code deny">40100</span></td><td>未登录或 token 已过期</td><td>清除本地 token，跳转 /login</td></tr>
+                <tr><td><span class="code deny">40300</span></td><td>缺少操作权限</td><td>停留当前页，提示「无操作权限」</td></tr>
+                <tr><td><span class="code deny">40301</span></td><td>无权访问该数据</td><td>停留当前页，提示「无权访问该资源」</td></tr>
+                <tr><td><span class="code deny">40302</span></td><td>非资源归属人，无法修改</td><td>提示「只有创建者可修改」</td></tr>
+                <tr><td><span class="code deny">40303</span></td><td>越权授权</td><td>指出具体被拒绝的权限码</td></tr>
+                <tr><td><span class="code">40901</span></td><td>角色仍被用户引用</td><td>提示关联用户数</td></tr>
+                <tr><td><span class="code">40902</span></td><td>权限仍被角色引用</td><td>提示关联角色数</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var denied = params.get('denied') || 'role:list';
+  var from = params.get('from') || 'roles.html';
+  var labels = {
+    'dashboard.html': '工作台',
+    'agents.html': 'Agent 管理',
+    'agent-detail.html': 'Agent 详情',
+    'users.html': '用户管理',
+    'roles.html': '角色管理',
+    'permissions.html': '权限管理',
+    'audit.html': '审计日志'
+  };
+
+  document.getElementById('deny-copy').textContent =
+    '「' + (labels[from] || from) + '」需要权限码 ' + denied + '，你的角色「' + CG.me.roleLabel +
+    '」没有该权限。菜单不会渲染这个入口，直接输入地址也会被同一个守卫拦下。';
+
+  document.getElementById('d-from').textContent = from;
+  document.getElementById('d-perm').textContent = denied;
+  document.getElementById('d-who').textContent = CG.me.name + ' / ' + CG.me.roleLabel;
+  document.getElementById('d-scope').textContent = CG.me.dataScope === 'all' ? '全部数据' : '仅本人数据';
+  document.getElementById('deny-code').textContent = '40300 / 缺少操作权限';
+  document.getElementById('to-dashboard').href = CG.hrefWithRole('dashboard.html');
+
+  document.getElementById('back').addEventListener('click', function () {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = CG.hrefWithRole('dashboard.html');
+  });
+  document.getElementById('switch-identity').addEventListener('click', function () {
+    CG.switchRole('admin');
+  });
+})();
+</script>
+</body>
+</html>

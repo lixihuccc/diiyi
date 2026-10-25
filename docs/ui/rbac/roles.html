@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>角色管理 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="roles" data-title="角色管理" data-group="系统管理" data-requires="role:list">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">角色管理</h1>
+            <p class="page-desc">角色决定「能做什么」与「能看哪些数据」。数据范围与权限码在这里一起配置，保存后立即失效该角色下所有用户的权限缓存。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" type="button" data-perm="role:create" data-new-role>新建角色</button>
+          </div>
+        </div>
+
+        <div class="master-detail">
+          <div>
+            <div class="section-head" style="margin-bottom:0">
+              <h2>角色</h2>
+              <span class="meta" id="role-count"></span>
+            </div>
+            <div class="role-list" id="role-list"></div>
+            <div class="notice" style="margin-top:16px">
+              角色列表展示数据范围与关联用户数。删除仍被引用的角色会被拒绝（<span class="code">40901</span>）。
+            </div>
+          </div>
+
+          <div id="panel"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var order = ['agent', 'prompt', 'knowledge', 'tool', 'model', 'provider', 'user', 'role', 'permission', 'conversation', 'analytics', 'system'];
+  var groups = order.map(function (mod) {
+    return CG.permissions.filter(function (g) { return g.module === mod; })[0];
+  }).filter(Boolean);
+
+  var rolePerms = {
+    admin: { wild: groups.map(function (g) { return g.module; }), exact: CG.permissions.reduce(function (acc, g) {
+      return acc.concat(g.perms.map(function (p) { return p[0]; }));
+    }, []) },
+    operator: {
+      wild: ['agent', 'prompt', 'knowledge', 'tool'],
+      exact: ['model:list', 'model:read', 'provider:list', 'provider:read']
+    },
+    viewer: {
+      wild: [],
+      exact: ['agent:list', 'agent:read', 'prompt:list', 'prompt:read', 'knowledge:list', 'knowledge:read', 'tool:list', 'tool:read', 'model:list', 'model:read', 'provider:list', 'provider:read']
+    }
+  };
+
+  var state = { code: new URLSearchParams(window.location.search).get('code') || 'operator' };
+
+  function getRole(code) {
+    return CG.roles.filter(function (r) { return r.code === code; })[0];
+  }
+
+  function isWild(code, mod) {
+    return rolePerms[code].wild.indexOf(mod) !== -1;
+  }
+
+  function isChecked(code, perm) {
+    var cfg = rolePerms[code];
+    if (isWild(code, perm.split(':')[0])) return true;
+    return cfg.exact.indexOf(perm) !== -1;
+  }
+
+  function countPerms(code) {
+    var cfg = rolePerms[code];
+    return { wild: cfg.wild.length, exact: cfg.exact.length };
+  }
+
+  function renderRoleList() {
+    document.getElementById('role-count').textContent = CG.roles.length + ' 个角色';
+    document.getElementById('role-list').innerHTML = CG.roles.map(function (r) {
+      return '<button class="role-item" type="button" aria-current="' + (r.code === state.code) + '" data-code="' + r.code + '">' +
+        '<span class="r-top"><span class="r-name">' + r.name + '</span><span class="r-code">' + r.code + '</span></span>' +
+        '<span class="r-meta"><span>' + (r.scope === 'all' ? '全部数据' : '仅本人数据') + '</span><span>' + r.users + ' 位用户</span>' + (r.builtin ? '<span>内置</span>' : '') + '</span>' +
+      '</button>';
+    }).join('');
+    document.querySelectorAll('[data-code]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.code = btn.getAttribute('data-code');
+        renderRoleList();
+        renderPanel();
+        try { history.replaceState(null, '', '?code=' + state.code + '&role=' + CG.roleKey); } catch (e) { /* file:// */ }
+      });
+    });
+  }
+
+  function renderPanel() {
+    var role = getRole(state.code);
+    var isAdminRole = role.code === 'admin';
+    var canUpdate = CG.can('role:update');
+    var canAssign = CG.can('role:assign_perm');
+    var canDelete = CG.can('role:delete');
+    var deleteReason = isAdminRole
+      ? '系统内置角色不可删除（7.3）'
+      : role.users > 0
+        ? '仍有 ' + role.users + ' 位用户关联，删除会被拒绝（40901）'
+        : !canDelete ? '当前角色没有 role:delete' : '';
+    var counts = countPerms(role.code);
+    var checkedExact = groups.reduce(function (acc, g) {
+      return acc + g.perms.filter(function (p) { return isChecked(role.code, p[0]); }).length;
+    }, 0);
+    var editable = !isAdminRole && (canUpdate || canAssign);
+
+    document.getElementById('panel').innerHTML = '' +
+      '<div class="role-panel">' +
+        '<div class="role-panel-head">' +
+          '<div>' +
+            '<h2>' + role.name + ' <span class="code">' + role.code + '</span></h2>' +
+            '<p class="sub">' + role.note + '</p>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px">' +
+            (isAdminRole
+              ? '<button class="btn btn-danger" type="button" disabled title="' + deleteReason + '">删除角色</button>'
+              : '<button class="btn btn-danger" type="button"' + (deleteReason ? ' disabled title="' + deleteReason + '"' : '') + ' data-del-role>删除角色</button>') +
+          '</div>' +
+        '</div>' +
+
+        '<div class="scope-choice">' +
+          '<h3>数据范围 <span class="small muted" style="font-weight:400">（决定第二层数据权限）</span></h3>' +
+          '<div class="choice-row">' +
+            '<label class="choice" data-checked="' + (role.scope === 'all') + '">' +
+              '<input type="radio" name="scope" value="all" ' + (role.scope === 'all' ? 'checked' : '') + (isAdminRole ? ' disabled' : '') + '>' +
+              '<span>全部数据<span class="c-sub">可读写所有归属人的资源</span></span>' +
+            '</label>' +
+            '<label class="choice" data-checked="' + (role.scope === 'self') + '">' +
+              '<input type="radio" name="scope" value="self" ' + (role.scope === 'self' ? 'checked' : '') + (isAdminRole ? ' disabled' : '') + '>' +
+              '<span>仅本人数据<span class="c-sub">可读公开资源，仅可写自己创建的</span></span>' +
+            '</label>' +
+          '</div>' +
+          (isAdminRole ? '<div class="notice warn" style="margin-top:12px">系统保护：<span class="code">admin</span> 角色的数据范围固定为「全部数据」，不可修改，也不可删除其权限（7.3）。</div>' : '') +
+          '<div class="notice" id="scope-notice" style="margin-top:12px">数据范围变更保存后，需立即失效该角色下所有用户的权限缓存；下一次请求即按新范围判定。</div>' +
+        '</div>' +
+
+        '<div class="perm-groups" id="perm-groups">' +
+          groups.map(function (g) {
+            var wildChecked = isWild(role.code, g.module);
+            return '<div class="perm-group" data-group="' + g.module + '">' +
+              '<div class="perm-group-head">' +
+                '<span class="pg-name">' + g.name + '<span class="code">' + g.module + ':*</span></span>' +
+                '<label class="perm-check is-wild" style="padding:2px 6px">' +
+                  '<input type="checkbox" data-wild="' + g.module + '" ' + (wildChecked ? 'checked' : '') + (editable ? '' : ' disabled') + '>' +
+                  '<span class="pc-name">全选模块</span>' +
+                '</label>' +
+              '</div>' +
+              '<div class="perm-grid">' + g.perms.map(function (p) {
+                return '<label class="perm-check">' +
+                  '<input type="checkbox" data-perm-code="' + p[0] + '" data-mod="' + g.module + '" ' + (isChecked(role.code, p[0]) ? 'checked' : '') + (editable ? '' : ' disabled') + '>' +
+                  '<span><span class="pc-code">' + p[0] + '</span> <span class="pc-name">' + p[1] + '</span></span>' +
+                '</label>';
+              }).join('') + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+
+        '<div class="panel-foot">' +
+          '<span class="hint" id="perm-count">已选 ' + checkedExact + ' 项精确权限，' + counts.wild + ' 个模块通配。' +
+            (CG.me.isSuperuser ? '当前操作者为超级管理员，不受越权限制。' : '你只能授予自己拥有的权限，否则整体拒绝（40303）。') +
+          '</span>' +
+          '<div style="display:flex;gap:8px">' +
+            '<button class="btn" type="button" data-reset>重置</button>' +
+            '<button class="btn btn-primary" type="button" data-save' + (editable ? '' : ' disabled title="当前角色为系统内置或缺少权限"') + '>保存权限</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    wirePanel(role, editable);
+  }
+
+  function wirePanel(role, editable) {
+    document.querySelectorAll('input[name="scope"]').forEach(function (input) {
+      input.addEventListener('change', function () {
+        document.querySelectorAll('.choice').forEach(function (c) {
+          c.setAttribute('data-checked', String(c.querySelector('input').checked));
+        });
+        var n = document.getElementById('scope-notice');
+        if (n) n.innerHTML = '将数据范围改为「' + (input.value === 'all' ? '全部数据' : '仅本人数据') + '」。保存后，该角色下 ' + role.users + ' 位用户的缓存立即失效（最迟 5 分钟）。';
+      });
+    });
+
+    document.querySelectorAll('[data-wild]').forEach(function (box) {
+      box.addEventListener('change', function () {
+        var mod = box.getAttribute('data-wild');
+        document.querySelectorAll('[data-mod="' + mod + '"]').forEach(function (child) {
+          child.checked = box.checked;
+        });
+        updateCount();
+      });
+    });
+
+    document.querySelectorAll('[data-mod]').forEach(function (box) {
+      box.addEventListener('change', function () {
+        var mod = box.getAttribute('data-mod');
+        var children = Array.prototype.slice.call(document.querySelectorAll('[data-mod="' + mod + '"]'));
+        var wild = document.querySelector('[data-wild="' + mod + '"]');
+        if (wild) wild.checked = children.every(function (c) { return c.checked; });
+        updateCount();
+      });
+    });
+
+    function updateCount() {
+      var exact = document.querySelectorAll('[data-perm-code]:checked').length;
+      var wild = document.querySelectorAll('[data-wild]:checked').length;
+      document.getElementById('perm-count').textContent =
+        '已选 ' + exact + ' 项精确权限，' + wild + ' 个模块通配。' +
+        (CG.me.isSuperuser ? '当前操作者为超级管理员，不受越权限制。' : '你只能授予自己拥有的权限，否则整体拒绝（40303）。');
+    }
+
+    var save = document.querySelector('[data-save]');
+    if (save) save.addEventListener('click', function () {
+      CG.toast('原型演示：已保存「' + role.name + '」的权限与数据范围，相关用户缓存立即失效');
+    });
+    var reset = document.querySelector('[data-reset]');
+    if (reset) reset.addEventListener('click', function () { renderPanel(); });
+    var del = document.querySelector('[data-del-role]');
+    if (del) del.addEventListener('click', function () {
+      CG.toast('原型演示：删除角色前会检查关联用户数；若仍被引用则返回 40901');
+    });
+  }
+
+  var newRole = document.querySelector('[data-new-role]');
+  if (newRole) newRole.addEventListener('click', function () {
+    CG.toast('原型演示：新建角色默认数据范围「仅本人数据」，权限默认不勾选');
+  });
+
+  renderRoleList();
+  renderPanel();
+})();
+</script>
+</body>
+</html>

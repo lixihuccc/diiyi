@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>权限管理 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="permissions" data-title="权限管理" data-group="系统管理" data-requires="permission:list">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">权限管理</h1>
+            <p class="page-desc">权限码是功能权限的唯一标识，格式为「模块:动作」。权限码创建后不可修改；被角色引用的权限不能删除。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" type="button" data-perm="permission:create" data-new-perm>新建权限</button>
+          </div>
+        </div>
+
+        <div class="strip" id="perm-summary"></div>
+
+        <div class="table-tools" style="margin-top:22px">
+          <div class="tool-set">
+            <input class="field search" id="q" type="search" placeholder="搜索权限码或名称" aria-label="搜索权限">
+            <select class="field select" id="module-filter" aria-label="按模块筛选">
+              <option value="">全部模块</option>
+            </select>
+          </div>
+          <div class="small muted" id="count"></div>
+        </div>
+
+        <div id="groups"></div>
+
+        <div class="notice">
+          通配符只允许出现在末尾：<span class="code">*</span> 或 <span class="code">模块:*</span>。匹配顺序为精确匹配 → 模块通配 → 全局通配，前端与后端必须一致。
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="modal" id="perm-modal" hidden role="dialog" aria-modal="true" aria-labelledby="perm-modal-title">
+  <div class="modal-veil" data-close-modal></div>
+  <div class="modal-card">
+    <button class="modal-close" type="button" aria-label="关闭" data-close-modal>×</button>
+    <div class="modal-head">
+      <h2 id="perm-modal-title">新建权限</h2>
+      <p>权限码创建后不可修改。如需变更，应新建权限并迁移角色关联。</p>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-field">
+          <label for="perm-module">模块</label>
+          <input id="perm-module" type="text" placeholder="agent" autocomplete="off">
+        </div>
+        <div class="form-field">
+          <label for="perm-action">动作</label>
+          <input id="perm-action" type="text" placeholder="archive" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="perm-name">名称</label>
+        <input id="perm-name" type="text" placeholder="归档 Agent" autocomplete="off">
+      </div>
+      <div class="note-line idle" style="border-top:1px solid var(--rule)"><span class="mark">码</span><span><b>将创建 <span class="code" id="perm-preview">模块:动作</span></b><span class="why">仅允许小写字母、数字与下划线；通配符只允许出现在末尾。</span></span></div>
+      <div class="notice danger" id="perm-error" hidden></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" type="button" data-close-modal>取消</button>
+      <button class="btn btn-primary" type="button" id="perm-save">创建权限</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var allPerms = [];
+  CG.permissions.forEach(function (g) {
+    g.perms.forEach(function (p) {
+      allPerms.push({ module: g.module, moduleName: g.name, code: p[0], name: p[1], api: p[2], refs: p[3] });
+    });
+  });
+
+  var moduleSelect = document.getElementById('module-filter');
+  CG.permissions.forEach(function (g) {
+    var opt = document.createElement('option');
+    opt.value = g.module;
+    opt.textContent = g.name;
+    moduleSelect.appendChild(opt);
+  });
+
+  document.getElementById('perm-summary').innerHTML = [
+    ['权限码', allPerms.length, '个'],
+    ['模块', CG.permissions.length, '个前缀'],
+    ['全局通配', 1, '个，仅超级管理员'],
+    ['未授予角色', allPerms.filter(function (p) { return p.refs === 0; }).length, '个，预留']
+  ].map(function (s) {
+    return '<div class="cell"><div class="k">' + s[0] + '</div><div class="v">' + s[1] + ' <small>' + s[2] + '</small></div></div>';
+  }).join('');
+
+  function render() {
+    var term = document.getElementById('q').value.trim().toLowerCase();
+    var mod = moduleSelect.value;
+    var total = 0;
+
+    var html = CG.permissions.filter(function (g) { return !mod || g.module === mod; }).map(function (g) {
+      var rows = g.perms.filter(function (p) {
+        return !term || p[0].indexOf(term) !== -1 || p[1].indexOf(term) !== -1 || p[2].toLowerCase().indexOf(term) !== -1;
+      });
+      if (!rows.length) return '';
+      total += rows.length;
+      return '<section class="module-block">' +
+        '<div class="module-head">' +
+          '<div class="mh-name">' + g.name + '<span class="code">' + g.module + ':*</span></div>' +
+          '<div class="mh-meta">' + rows.length + ' 项，模块通配可一键授予整组权限</div>' +
+        '</div>' +
+        '<div class="ledger-wrap" style="border-top:0">' +
+          '<table class="ledger">' +
+            '<thead><tr><th>权限码</th><th>名称</th><th>覆盖接口</th><th class="num">关联角色</th><th style="text-align:right">操作</th></tr></thead>' +
+            '<tbody>' + rows.map(function (p) {
+              var refs = p[3] || 0;
+              var referenced = refs > 0;
+              var reason = referenced ? '仍被 ' + refs + ' 个角色引用，无法删除（40902）' : '当前角色没有 permission:delete';
+              return '<tr>' +
+                '<td><span class="code">' + p[0] + '</span></td>' +
+                '<td>' + p[1] + '</td>' +
+                '<td class="mono small muted">' + p[2] + '</td>' +
+                '<td class="num">' + (referenced ? refs : '—') + '</td>' +
+                '<td><div class="row-actions"><button class="icon-btn danger" type="button"' +
+                  (referenced || !CG.can('permission:delete') ? ' disabled title="' + reason + '"' : '') +
+                  ' data-delete="' + p[0] + '">删除</button></div></td>' +
+              '</tr>';
+            }).join('') + '</tbody>' +
+          '</table>' +
+        '</div>' +
+      '</section>';
+    }).join('');
+
+    document.getElementById('groups').innerHTML = html ||
+      '<div class="empty"><h2>没有匹配的权限码</h2><p>调整搜索词或切换到其他模块。</p></div>';
+    document.getElementById('count').textContent = '显示 ' + total + ' / ' + allPerms.length + ' 项权限';
+
+    document.querySelectorAll('[data-delete]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        CG.toast('原型演示：删除权限前会检查引用关系；被引用时返回 40902 与关联角色数');
+      });
+    });
+  }
+
+  document.getElementById('q').addEventListener('input', render);
+  moduleSelect.addEventListener('change', render);
+
+  var modal = document.getElementById('perm-modal');
+  var modInput = document.getElementById('perm-module');
+  var actInput = document.getElementById('perm-action');
+  var nameInput = document.getElementById('perm-name');
+
+  function updatePreview() {
+    var m = modInput.value.trim() || '模块';
+    var a = actInput.value.trim() || '动作';
+    document.getElementById('perm-preview').textContent = m + ':' + a;
+  }
+  [modInput, actInput].forEach(function (el) { el.addEventListener('input', updatePreview); });
+
+  function closePerm() { CG.closeModal('perm-modal'); }
+  document.querySelectorAll('[data-close-modal]').forEach(function (el) { el.addEventListener('click', closePerm); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closePerm(); });
+
+  var newBtn = document.querySelector('[data-new-perm]');
+  if (newBtn) newBtn.addEventListener('click', function () {
+    modInput.value = '';
+    actInput.value = '';
+    nameInput.value = '';
+    document.getElementById('perm-error').hidden = true;
+    updatePreview();
+    CG.openModal('perm-modal');
+  });
+
+  document.getElementById('perm-save').addEventListener('click', function () {
+    var m = modInput.value.trim();
+    var a = actInput.value.trim();
+    var name = nameInput.value.trim();
+    var err = document.getElementById('perm-error');
+    if (!/^[a-z][a-z0-9_]*$/.test(m) || !/^[a-z][a-z0-9_]*$/.test(a)) {
+      err.hidden = false;
+      err.textContent = '格式不正确：模块与动作只能包含小写字母、数字与下划线，且不能以数字开头。';
+      return;
+    }
+    if (!name) {
+      err.hidden = false;
+      err.textContent = '请填写权限名称。';
+      return;
+    }
+    err.hidden = true;
+    closePerm();
+    CG.toast('原型演示：已创建权限 ' + m + ':' + a + '，未授予任何角色');
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

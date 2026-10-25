@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>工作台 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="dashboard" data-title="工作台">
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <div class="stage">
+    <div class="boundary" id="boundary"></div>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="main" id="main">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">工作台</h1>
+            <p class="page-desc" id="page-desc"></p>
+          </div>
+          <div class="page-actions">
+            <span class="small muted mono">GET /users/me</span>
+          </div>
+        </div>
+
+        <section class="section" aria-labelledby="scope-title">
+          <div class="section-head">
+            <h2 id="scope-title">我的授权范围</h2>
+            <span class="meta">多角色取并集，数据范围取最宽值</span>
+          </div>
+          <div class="scope">
+            <div class="scope-identity">
+              <div class="big" id="scope-name"></div>
+              <div class="sub" id="scope-role"></div>
+              <div class="scope-rows" id="scope-rows"></div>
+            </div>
+            <div class="scope-perms">
+              <h3>可读与可写</h3>
+              <table class="scope-table">
+                <thead>
+                  <tr><th>模块</th><th class="num">可读</th><th class="num">可写</th><th>权限来源</th></tr>
+                </thead>
+                <tbody id="scope-perm-rows"></tbody>
+              </table>
+            </div>
+            <div class="scope-edge">
+              <h3>边界说明</h3>
+              <p id="edge-copy"></p>
+              <div class="edge-rule" id="edge-rule"></div>
+            </div>
+          </div>
+
+          <div class="strip" id="usage-strip"></div>
+        </section>
+
+        <section class="section" aria-labelledby="agents-title">
+          <div class="section-head">
+            <h2 id="agents-title">可访问的 Agent</h2>
+            <a class="meta link" id="all-agents" href="agents.html">查看全部</a>
+          </div>
+          <div class="ledger-wrap">
+            <table class="ledger">
+              <caption id="agent-caption">列表由服务端按数据权限过滤，未在上表出现的资源不可见。</caption>
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>状态</th>
+                  <th>归属人</th>
+                  <th>可见范围</th>
+                  <th class="num">近 7 天调用</th>
+                </tr>
+              </thead>
+              <tbody id="agent-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="grid-2">
+            <div>
+              <div class="section-head">
+                <h2 id="audit-title">最近授权变更</h2>
+                <span class="meta" id="audit-meta"></span>
+              </div>
+              <div class="activity" id="activity"></div>
+            </div>
+            <div>
+              <div class="section-head">
+                <h2>快捷入口</h2>
+                <span class="meta">按权限渲染</span>
+              </div>
+              <div class="quick" id="quick"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var me = CG.me;
+  var isAll = me.dataScope === 'all';
+  var canCreateAgent = CG.can('agent:create');
+
+  document.getElementById('page-desc').textContent =
+    me.name + '，以下是你在「' + (isAll ? '全部数据' : '仅本人数据') + '」范围内的工作视图。菜单与数据按当前身份过滤。';
+
+  document.getElementById('scope-name').textContent = me.name;
+  document.getElementById('scope-role').textContent = me.roleLabel;
+
+  var stats = CG.permissionStats();
+  var rows = [
+    ['角色', me.roles.map(function (r) { return r.name; }).join('、')],
+    ['数据范围', isAll ? '全部数据' : '仅本人数据'],
+    ['功能权限', stats.label],
+    ['超级管理员', me.isSuperuser ? '是，跳过权限校验' : '否']
+  ];
+  document.getElementById('scope-rows').innerHTML = rows.map(function (r) {
+    return '<div class="sr"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
+  }).join('');
+
+  var scopeData = {
+    admin: [
+      ['Agent 管理', 6, 6, 'agent:*'],
+      ['知识库管理', 9, 9, 'knowledge:*'],
+      ['Prompt 管理', 12, 12, 'prompt:*'],
+      ['工具管理', 7, 7, 'tool:*'],
+      ['模型 / 供应商', 9, 9, 'model:* / provider:*']
+    ],
+    operator: [
+      ['Agent 管理', 4, 2, 'agent:*'],
+      ['知识库管理', 3, 2, 'knowledge:*'],
+      ['Prompt 管理', 5, 3, 'prompt:*'],
+      ['工具管理', 6, 4, 'tool:*'],
+      ['模型 / 供应商', 4, 0, 'list / read']
+    ],
+    viewer: [
+      ['Agent 管理', 4, 0, 'list / read'],
+      ['知识库管理', 2, 0, 'list / read'],
+      ['Prompt 管理', 3, 0, 'list / read'],
+      ['工具管理', 2, 0, 'list / read'],
+      ['模型 / 供应商', 4, 0, 'list / read']
+    ]
+  }[me.key];
+
+  document.getElementById('scope-perm-rows').innerHTML = scopeData.map(function (r) {
+    return '<tr><td>' + r[0] + '</td><td class="num">' + r[1] + '</td><td class="num">' + r[2] + '</td><td><span class="code plain">' + r[3] + '</span></td></tr>';
+  }).join('');
+
+  var visibleAgents = CG.agents.filter(CG.canRead);
+  var writableCount = visibleAgents.filter(function (a) { return CG.canWrite(a) && CG.can('agent:update'); }).length;
+
+  document.getElementById('edge-copy').innerHTML = me.isSuperuser
+    ? '你以超级管理员身份访问。所有功能权限与数据权限校验都会被跳过，但仍受系统保护规则约束。'
+    : (isAll
+      ? '你的角色数据范围为「全部数据」：可以读取并修改所有 Agent、知识库、Prompt 与工具，与归属人无关。'
+      : '你的数据范围是「仅本人数据」：列表只返回你创建的资源与他人创建的公开资源。公开意味着可读，不意味着可编辑。');
+
+  document.getElementById('edge-rule').innerHTML =
+    '<b>本页可写 Agent：' + writableCount + ' / ' + visibleAgents.length + '</b><br>' +
+    '写操作 = 功能权限 + 归属人校验。删除他人公开资源会被拒绝（40302）。';
+
+  var usage = {
+    admin: [12487, '2,345,678', '97.8%', '8 / 12'],
+    operator: [9842, '1,842,190', '97.2%', '5 / 8'],
+    viewer: [1204, '212,480', '96.4%', '2 / 4']
+  }[me.key];
+  var usageLabels = [
+    ['今日调用', usage[0].toLocaleString('zh-CN'), '较昨日 +12.5%'],
+    ['Token 消耗', usage[1], '较昨日 +8.3%'],
+    ['成功率', usage[2], '近 24 小时'],
+    ['活跃 Agent', usage[3], '含可读但不可写']
+  ];
+  document.getElementById('usage-strip').innerHTML = usageLabels.map(function (u) {
+    return '<div class="cell"><div class="k">' + u[0] + '</div><div class="v">' + u[1] + ' <small>' + u[2] + '</small></div></div>';
+  }).join('');
+
+  document.getElementById('agent-rows').innerHTML = visibleAgents.slice(0, 5).map(function (a) {
+    return '<tr>' +
+      '<td><a class="link" href="' + CG.hrefWithRole('agent-detail.html', 'agent=' + encodeURIComponent(a.id)) + '">' + a.name + '</a><div class="small muted mono">' + a.id + '</div></td>' +
+      '<td>' + CG.statusTag(a.status) + '</td>' +
+      '<td>' + a.owner + (CG.isMine(a) ? ' <span class="tag tag-grant">你</span>' : '') + '</td>' +
+      '<td>' + CG.visibilityTag(a.visibility) + '</td>' +
+      '<td class="num">' + CG.fmt(a.calls) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('agent-caption').textContent =
+    '共 ' + visibleAgents.length + ' 条可访问资源；另有 ' + (CG.agents.length - visibleAgents.length) + ' 条因数据权限不可见。';
+  document.getElementById('all-agents').href = CG.hrefWithRole('agents.html');
+
+  var canAudit = CG.can('system:audit_read');
+  if (!canAudit) {
+    document.getElementById('audit-title').textContent = '我的权限';
+    document.getElementById('audit-meta').innerHTML = '共 ' + me.permissions.length + ' 项，变更记录需要 <span class="code">system:audit_read</span>';
+  } else {
+    document.getElementById('audit-meta').innerHTML = '<a class="link" href="' + CG.hrefWithRole('audit.html') + '">查看审计日志</a>';
+  }
+  document.getElementById('activity').innerHTML = canAudit
+    ? CG.audit.slice(0, 4).map(function (e) {
+        return '<div class="activity-row">' +
+          '<span class="time">' + e.time + '</span>' +
+          '<span class="who">' + e.actor + '</span>' +
+          '<span class="what"><b>' + e.action + '</b>：' + e.target + ' <span class="code">' + e.after + '</span></span>' +
+        '</div>';
+      }).join('')
+    : '<div class="perm-cloud">' + me.permissions.map(function (p) {
+        return '<span class="code grant">' + p + '</span>';
+      }).join('') + '</div>' +
+      '<div class="notice" style="margin-top:16px">授权变更记录仅对拥有 <span class="code">system:audit_read</span> 的角色开放。你当前可以看到自己的角色与权限，但不能查看他人的授权轨迹。</div>';
+
+  var quick = [];
+  quick.push(['Agent 列表', CG.hrefWithRole('agents.html'), 'agent:list']);
+  if (canCreateAgent) quick.push(['新建 Agent', CG.hrefWithRole('agents.html'), 'agent:create']);
+  if (CG.can('user:list')) quick.push(['用户管理', CG.hrefWithRole('users.html'), 'user:list']);
+  if (CG.can('role:list')) quick.push(['角色管理', CG.hrefWithRole('roles.html'), 'role:list']);
+  if (CG.can('permission:list')) quick.push(['权限管理', CG.hrefWithRole('permissions.html'), 'permission:list']);
+
+  document.getElementById('quick').innerHTML = quick.map(function (q) {
+    return '<a href="' + q[1] + '"><span>' + q[0] + '</span><span class="k mono">' + q[2] + '</span></a>';
+  }).join('') +
+    '<div class="notice" style="margin-top:16px">入口按权限渲染：没有对应权限码的菜单与按钮不会出现，也不会因为输入 URL 而可达。</div>';
+})();
+</script>
+</body>
+</html>

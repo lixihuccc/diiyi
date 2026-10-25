@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>RBAC 授权原型 · 辰光 Agent 平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="cover">
+  <header class="cover-top">
+    <div class="cover-brand">辰光 Agent<small>RBAC ACCESS PROTOTYPE</small></div>
+    <div class="cover-meta">依据 PROJECT_SPEC_V2.md / 2026-10-25 / v2.0</div>
+  </header>
+
+  <section class="cover-hero">
+    <div>
+      <h1>把授权边界，<br>画在每一页上。</h1>
+      <p class="lede">
+        这套原型对应 V2 的 RBAC 需求：功能权限决定「能不能做」，数据权限决定「能对哪些记录做」。
+        界面不隐藏规则——每个页面都显示当前身份、数据范围与本页所需权限码；每个被禁用的操作都就地说明原因。
+      </p>
+      <p class="lede" style="margin-top:12px">
+        设计语言取自访问控制台账：分级授权条、带线的表格、权限码作为证据。没有卡片堆叠，也没有装饰性的渐变。
+      </p>
+    </div>
+    <aside class="cover-aside">
+      <div class="ca-row"><span>页面</span><span>09 + 说明页</span></div>
+      <div class="ca-row"><span>预览身份</span><span>03</span></div>
+      <div class="ca-row"><span>权限码</span><span>72</span></div>
+      <div class="ca-row"><span>产物</span><span>HTML / CSS / JS + PNG</span></div>
+      <div class="ca-row"><span>图像目录</span><span>images/</span></div>
+      <p>静态页面可直接用浏览器打开，无需构建。身份切换、筛选、权限勾选与弹窗均可交互。</p>
+    </aside>
+  </section>
+
+  <section class="cover-index">
+    <h2>页面索引</h2>
+    <div class="index-table">
+      <div class="index-row" style="border-bottom:1px solid var(--rule-strong)">
+        <span class="idx">序号</span><span class="iname">页面</span><span class="iwhy">演示重点</span><span class="ifile">文件</span><span class="ireq">权限码</span>
+      </div>
+      <div class="index-row"><span class="idx">01</span><a class="iname" href="login.html">登录</a><span class="iwhy">凭证与验证码；登录后拉取 /users/me</span><span class="ifile">login.html</span><span class="ireq">免登录</span></div>
+      <div class="index-row"><span class="idx">02</span><a class="iname" href="dashboard.html?role=admin">工作台</a><span class="iwhy">授权范围、过滤后的资源、按权限渲染的入口</span><span class="ifile">dashboard.html</span><span class="ireq">登录即可</span></div>
+      <div class="index-row"><span class="idx">03</span><a class="iname" href="agents.html?role=admin">Agent 管理</a><span class="iwhy">列表数据过滤、按钮级权限、可见范围标识</span><span class="ifile">agents.html</span><span class="ireq">agent:list</span></div>
+      <div class="index-row"><span class="idx">04</span><a class="iname" href="agent-detail.html?role=admin&agent=agt-1042">Agent 详情</a><span class="iwhy">权限注记、数据级写拒绝、引用资源校验</span><span class="ifile">agent-detail.html</span><span class="ireq">agent:read</span></div>
+      <div class="index-row"><span class="idx">05</span><a class="iname" href="users.html?role=admin">用户管理</a><span class="iwhy">角色分配、超级管理员保护、防自提权</span><span class="ifile">users.html</span><span class="ireq">user:list</span></div>
+      <div class="index-row"><span class="idx">06</span><a class="iname" href="roles.html?role=admin&code=operator">角色管理</a><span class="iwhy">数据范围、按模块分配权限、模块通配</span><span class="ifile">roles.html</span><span class="ireq">role:list</span></div>
+      <div class="index-row"><span class="idx">07</span><a class="iname" href="permissions.html?role=admin">权限管理</a><span class="iwhy">权限码分组、引用约束、格式校验</span><span class="ifile">permissions.html</span><span class="ireq">permission:list</span></div>
+      <div class="index-row"><span class="idx">08</span><a class="iname" href="audit.html?role=admin">审计日志</a><span class="iwhy">授权变更台账与越权拒绝记录</span><span class="ifile">audit.html</span><span class="ireq">system:audit_read</span></div>
+      <div class="index-row"><span class="idx">09</span><a class="iname" href="forbidden.html?role=operator&denied=user:list&from=users.html">403 页面</a><span class="iwhy">路由守卫、两个出口、业务码说明</span><span class="ifile">forbidden.html</span><span class="ireq">登录即可</span></div>
+    </div>
+  </section>
+
+  <section class="cover-index">
+    <h2>建议评审路径</h2>
+    <div class="grid-2">
+      <div>
+        <div class="quick" style="border-top:1px solid var(--rule-strong)">
+          <a href="agents.html?role=operator"><span>以运营人员查看 Agent 列表</span><span class="k mono">agent:list / self</span></a>
+          <a href="agents.html?role=viewer"><span>以只读访客查看同一列表</span><span class="k mono">viewer</span></a>
+          <a href="agent-detail.html?role=operator&agent=agt-1042"><span>运营人员打开他人公开 Agent</span><span class="k mono">40302</span></a>
+          <a href="users.html?role=operator"><span>运营人员直接输入系统管理地址</span><span class="k mono">403</span></a>
+        </div>
+      </div>
+      <div>
+        <p class="small muted" style="line-height:1.8">
+          切换身份使用页面右上角的「预览身份」。切换后菜单、按钮、表格行与权限注记会一起变化；
+          被隐藏的菜单不是置灰，而是不渲染。直接访问无权限页面会被路由守卫送往 403 页面。
+        </p>
+        <p class="small muted" style="line-height:1.8;margin-top:10px">
+          原型中的三个身份对应：超级管理员（跳过校验）、运营人员（业务全权 / 仅本人数据）、
+          只读访客（仅 list 与 read）。只读访客用于评审只读状态，是待确认角色，不是 V2 的既定默认角色。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="cover-cols">
+    <div class="cover-block">
+      <h3>颜色</h3>
+      <ul>
+        <li><b>骨白 #EFEEE8</b>：画布</li>
+        <li><b>纸白 #FAFAF6</b>：内容面</li>
+        <li><b>墨黑 #151B19</b>：侧栏与标题</li>
+        <li><b>石墨 #5E6763</b>：次级文本</li>
+        <li><b>松绿 #1E5B49</b>：授权与主操作</li>
+        <li><b>印红 #A23B2B</b>：拒绝与危险</li>
+      </ul>
+    </div>
+    <div class="cover-block">
+      <h3>字体</h3>
+      <ul>
+        <li><b>Noto Serif SC</b> · 页面标题、品牌</li>
+        <li><b>IBM Plex Sans SC</b> · 界面与正文</li>
+        <li><b>IBM Plex Mono</b> · 权限码、ID、时间</li>
+        <li>正文行长 &lt; 80 字符；表格数字右对齐</li>
+        <li>不使用全大写标签与装饰性小标题</li>
+      </ul>
+    </div>
+    <div class="cover-block">
+      <h3>原则</h3>
+      <ul>
+        <li>边界可见：分级授权条 + 权限注记</li>
+        <li>台账而非卡片：用线组织信息</li>
+        <li>一种权威色：松绿只用于授权</li>
+        <li>拒绝必须解释：40300 / 40301 / 40302</li>
+        <li>动效只回应操作：切换、展开、保存</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="cover-foot">
+    <span>辰光 Agent 平台 / RBAC 页面原型 / 2026-10-25</span>
+    <span>设计说明书：docs/design/ui/rbac-prototype-design.md；图像：docs/ui/rbac/images/</span>
+  </footer>
+</div>
+
+</body>
+</html>
